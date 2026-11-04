@@ -24,13 +24,14 @@ class CallbackResponse(BaseModel):
 def create_redirect_response(data: dict | None = None) -> RedirectResponse:
     response = RedirectResponse(url=data["url"])
     response.status_code = data["status_code"]
-    if data["cookie"] is not None:
-        response.set_cookie(
-            key=data["cookie"]["key"],
-            value=data["cookie"]["value"],
-            httponly=data["cookie"]["httponly"],
-            samesite=data["cookie"]["samesite"],
-            max_age=data["cookie"]["max_age"]
-        )
+    if data["cookies"] is not None:
+        for cookie in data["cookies"]:
+            response.set_cookie(
+                key=cookie["key"],
+                value=cookie["value"],
+                httponly=cookie["httponly"],
+                samesite=cookie["samesite"],
+                max_age=cookie["max_age"]
+            )
 
     return response

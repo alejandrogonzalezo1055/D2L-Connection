@@ -1,5 +1,5 @@
 from fastapi import HTTPException, status, Query, Cookie
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, Response
 from functools import lru_cache
 from typing import Annotated
 from urllib.parse import urlencode
@@ -11,7 +11,7 @@ from common.schemas import AuthCallbackRequest, CallbackResponse, create_redirec
 
 
 callback_request = Annotated[AuthCallbackRequest, Query()]
-oauth_cookie = Annotated[str | None, Cookie()]
+cookie = Annotated[str | None, Cookie()]
 
 class OAuthService:
     def __init__(self):
@@ -23,6 +23,7 @@ class OAuthService:
         }
         with httpx.Client() as client:
             self.d2l_client = client
+
 
     def login_url(self) -> RedirectResponse:
         url = "http://" + self.settings.mock_auth_base_url + ":8800/oauth2/auth"
@@ -39,13 +40,15 @@ class OAuthService:
         response_data = {
             "url": f"{url}?{urlencode(params)}",
             "status_code": status.HTTP_302_FOUND,
-            "cookie":{
-                "key": "oauth_state",
-                "value": state,
-                "httponly": True,
-                "samesite": "lax",
-                "max_age": 300
-            }
+            "cookies":[
+                {
+                    "key": "oauth_state",
+                    "value": state,
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": 300
+                }
+            ]
         }
 
         return create_redirect_response(response_data)
@@ -57,13 +60,13 @@ class OAuthService:
         response_data = {
             "url": url,
             "status_code": status.HTTP_302_FOUND,
-            "cookie": None
+            "cookies": None
         }
 
         return create_redirect_response(response_data)
 
 
-    def auth_callback(self, request: callback_request, oauth_state: oauth_cookie) -> CallbackResponse:
+    def auth_callback(self, request: callback_request, oauth_state: cookie) -> CallbackResponse:
         if not oauth_state:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -81,29 +84,95 @@ class OAuthService:
         return CallbackResponse(message="Se obtuvo el codigo de autorizacion")
 
 
-    def obtain_token(self, option: str = "refresh") -> RedirectResponse:
-        if option in self.token_options:
-            url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
-
-            json_response = self.d2l_client.post(
-                url=url,
-                auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
-                data={
-                    "grant_type":self.token_options[option],
-                    "code": self.auth_code,
-                    "redirect_uri": "http://localhost:9000/core/callback"
-                }
-            ).json()
-
-            response_data = {
-                "url": url
-            }
-
-            response = create_redirect_response(response_data)
-        else:
-            response = create_redirect_response()
+    def obtain_tokens(self, option: str = "refresh") -> Response:
+        response = Response()
+        if option in self.token_options.keys():
+            match option:
+                case "access":
+                    response = self.access_token()
+                case "refresh":
+                    response = self.refresh_token()
+                case _:
+                    raise HTTPException(
+                        status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                        detail="El token que quiere obtener no existe"
+                    )
 
         return response
+
+
+    def access_token(self) -> RedirectResponse:
+        url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
+
+        json_response = self.d2l_client.post(
+            url=url,
+            auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
+            data={
+                "grant_type": self.token_options["access"],
+                "code": self.auth_code,
+                "redirect_uri": "http://localhost:9000/core/callback"
+            }
+        ).json()
+
+        response_data = {
+            "url": url,
+            "status_code": status.HTTP_302_FOUND,
+            "cookies": [
+                {
+                    "key": "access_token",
+                    "value": json_response["access_token"],
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": json_response["expires_in"]
+                },
+                {
+                    "key": "refresh_token",
+                    "value": json_response["refresh_token"],
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": json_response["expires_in"]
+                }
+            ]
+        }
+
+        return create_redirect_response(response_data)
+
+
+    def refresh_token(self) -> RedirectResponse:
+        url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
+
+        json_response = self.d2l_client.post(
+            url=url,
+            auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
+            data={
+                "grant_type": self.token_options["refresh"],
+                "refresh_token": self.auth_code,
+                "redirect_uri": "http://localhost:9000/core/callback"
+            }
+        ).json()
+
+        response_data = {
+            "url": url,
+            "status_code": status.HTTP_302_FOUND,
+            "cookies": [
+                {
+                    "key": "access_token",
+                    "value": json_response["access_token"],
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": json_response["expires_in"]
+                },
+                {
+                    "key": "refresh_token",
+                    "value": json_response["refresh_token"],
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": json_response["expires_in"]
+                }
+            ]
+        }
+
+        return create_redirect_response(response_data)
 
 
     def core_callback(self, option: str = "refresh"):
