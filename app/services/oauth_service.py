@@ -7,7 +7,7 @@ import secrets
 import httpx
 
 from common.settings import get_settings
-from common.schemas import AuthCallbackRequest, CallbackResponse, create_redirect_response
+from common.schemas import AuthCallbackRequest, CallbackResponse, create_redirect_response, create_response
 
 
 callback_request = Annotated[AuthCallbackRequest, Query()]
@@ -101,7 +101,7 @@ class OAuthService:
         return response
 
 
-    def access_token(self) -> RedirectResponse:
+    def access_token(self) -> Response:
         url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
 
         json_response = self.d2l_client.post(
@@ -115,8 +115,7 @@ class OAuthService:
         ).json()
 
         response_data = {
-            "url": url,
-            "status_code": status.HTTP_302_FOUND,
+            "status_code": status.HTTP_200_OK,
             "cookies": [
                 {
                     "key": "access_token",
@@ -135,10 +134,10 @@ class OAuthService:
             ]
         }
 
-        return create_redirect_response(response_data)
+        return create_response(response_data)
 
 
-    def refresh_token(self) -> RedirectResponse:
+    def refresh_token(self) -> Response:
         url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
 
         json_response = self.d2l_client.post(
@@ -152,8 +151,7 @@ class OAuthService:
         ).json()
 
         response_data = {
-            "url": url,
-            "status_code": status.HTTP_302_FOUND,
+            "status_code": status.HTTP_200_OK,
             "cookies": [
                 {
                     "key": "access_token",
@@ -172,7 +170,7 @@ class OAuthService:
             ]
         }
 
-        return create_redirect_response(response_data)
+        return create_response(response_data)
 
 
     def core_callback(self, option: str = "refresh"):

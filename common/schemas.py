@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Annotated
-from fastapi import status, Cookie
-from fastapi.responses import RedirectResponse
+from fastapi import status
+from fastapi.responses import RedirectResponse, Response
 
 
 class AuthCallbackRequest(BaseModel):
@@ -23,6 +22,22 @@ class CallbackResponse(BaseModel):
 
 def create_redirect_response(data: dict | None = None) -> RedirectResponse:
     response = RedirectResponse(url=data["url"])
+    response.status_code = data["status_code"]
+    if data["cookies"] is not None:
+        for cookie in data["cookies"]:
+            response.set_cookie(
+                key=cookie["key"],
+                value=cookie["value"],
+                httponly=cookie["httponly"],
+                samesite=cookie["samesite"],
+                max_age=cookie["max_age"]
+            )
+
+    return response
+
+
+def create_response(data: dict | None = None) -> Response:
+    response = Response()
     response.status_code = data["status_code"]
     if data["cookies"] is not None:
         for cookie in data["cookies"]:
