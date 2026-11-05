@@ -1,8 +1,10 @@
 from fastapi import HTTPException, status, Query, Cookie, Body
 from fastapi.responses import Response, RedirectResponse, JSONResponse
+
 from functools import lru_cache
 from typing import Annotated
 from urllib.parse import urlencode
+from datetime import datetime
 import secrets
 import httpx
 
@@ -112,6 +114,7 @@ class OAuthService:
                 "redirect_uri": "http://localhost:9000/auth/callback"
             }
         ).json()
+        response_time = datetime.now()
 
         if "error" not in json_response.keys():
             response_data = {
@@ -128,6 +131,13 @@ class OAuthService:
                     {
                         "key": "refresh_token",
                         "value": json_response["refresh_token"],
+                        "httponly": True,
+                        "samesite": "lax",
+                        "max_age": json_response["expires_in"] + 900
+                    },
+                    {
+                        "key": "response_time",
+                        "value": response_time.strftime("%Y-%m-%d %H:%M:%S"),
                         "httponly": True,
                         "samesite": "lax",
                         "max_age": json_response["expires_in"] + 900
@@ -158,6 +168,7 @@ class OAuthService:
                 "refresh_token": refresh_token
             }
         ).json()
+        response_time = datetime.now()
 
         if "error" not in json_response.keys():
             response_data = {
@@ -174,6 +185,13 @@ class OAuthService:
                     {
                         "key": "refresh_token",
                         "value": json_response["refresh_token"],
+                        "httponly": True,
+                        "samesite": "lax",
+                        "max_age": json_response["expires_in"] + 900
+                    },
+                    {
+                        "key": "response_time",
+                        "value": response_time.strftime("%Y-%m-%d %H:%M:%S"),
                         "httponly": True,
                         "samesite": "lax",
                         "max_age": json_response["expires_in"] + 900
