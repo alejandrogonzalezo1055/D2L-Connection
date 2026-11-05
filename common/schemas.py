@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field, field_validator
 from fastapi import status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, JSONResponse
 
 
-class AuthCallbackRequest(BaseModel):
-    code: str | None= Field(default=None)
+class CallbackRequest(BaseModel):
+    code: str | None = Field(default=None)
     state: str | None = Field(default=None)
 
     @field_validator("state")
@@ -36,8 +36,8 @@ def create_redirect_response(data: dict | None = None) -> RedirectResponse:
     return response
 
 
-def create_response(data: dict | None = None) -> Response:
-    response = Response()
+def create_json_response(data: dict | None = None) -> JSONResponse:
+    response = JSONResponse(content=data["content"])
     response.status_code = data["status_code"]
     if data["cookies"] is not None:
         for cookie in data["cookies"]:
