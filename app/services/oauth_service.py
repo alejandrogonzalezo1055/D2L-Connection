@@ -155,8 +155,7 @@ class OAuthService:
             auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
             data={
                 "grant_type": self.token_options["refresh"],
-                "refresh_token": refresh_token,
-                "redirect_uri": "http://localhost:9000/auth/callback"
+                "refresh_token": refresh_token
             }
         ).json()
 

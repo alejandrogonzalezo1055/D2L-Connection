@@ -22,7 +22,7 @@ def logout_url(service: OAuthServ) -> RedirectResponse:
     return service.logout_url()
 
 @router.post("/obtain-token", status_code=status.HTTP_200_OK)
-def obtain_token(service: OAuthServ, refresh_token: cookie = None, option: Annotated[str, Body(embed=True)] = "access") -> Response:
+def obtain_token(service: OAuthServ, refresh_token: cookie = None, option: Annotated[str, Body()] = "access") -> Response:
     return service.obtain_tokens(refresh_token, option)
 
 @router.get("/callback")
