@@ -1,11 +1,11 @@
-from pydantic import BaseModel, Field, field_validator
-from fastapi import status
-from fastapi.responses import RedirectResponse, JSONResponse
+from pydantic import BaseModel, field_validator
+from fastapi.responses import Response, RedirectResponse, JSONResponse
 
 
+# es para query params
 class CallbackRequest(BaseModel):
-    code: str | None = Field(default=None)
-    state: str | None = Field(default=None)
+    code: str | None = None
+    state: str | None = None
 
     @field_validator("state")
     @classmethod
@@ -15,14 +15,17 @@ class CallbackRequest(BaseModel):
         return value
 
 
-class CallbackResponse(BaseModel):
-    status_code: int = Field(default=status.HTTP_200_OK)
-    message: str = Field(default="")
+class ResponseCookies(BaseModel):
+    auth_code: str | None = None
+    oauth_state: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+    response_time: str = None
 
 
 def create_redirect_response(data: dict | None = None) -> RedirectResponse:
-    response = RedirectResponse(url=data["url"])
-    response.status_code = data["status_code"]
+    response = RedirectResponse(url=data["url"], status_code=data["status_code"])
+
     if data["cookies"] is not None:
         for cookie in data["cookies"]:
             response.set_cookie(
@@ -36,9 +39,14 @@ def create_redirect_response(data: dict | None = None) -> RedirectResponse:
     return response
 
 
-def create_json_response(data: dict | None = None) -> JSONResponse:
-    response = JSONResponse(content=data["content"])
-    response.status_code = data["status_code"]
+def create_response(data: dict | None = None) -> Response:
+    response = Response()
+
+    if type(data["content"]) is str:
+        response = Response(content=data["content"], status_code=data["status_code"])
+    elif type(data["content"]) is dict:
+        response = JSONResponse(content=data["content"], status_code=data["status_code"])
+
     if data["cookies"] is not None:
         for cookie in data["cookies"]:
             response.set_cookie(
@@ -50,3 +58,4 @@ def create_json_response(data: dict | None = None) -> JSONResponse:
             )
 
     return response
+
