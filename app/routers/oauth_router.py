@@ -17,30 +17,20 @@ cookies = Annotated[ResponseCookies | None, Cookie()]
 cookie = Annotated[str | None, Cookie()]
 
 
-async def refresh_monitor(service: OAuthServ, resp_cookies: cookies):
-    try:
-        yield
-    finally:
-        initial_response_time = datetime.strptime(resp_cookies.response_time, "%H:%M:%S")
-        time_diff = datetime.now() - initial_response_time
-
-        if time_diff.seconds >= 3000:
-            # QUE HAGO CON LA RESPONSE? SE ENVIA SOLA AL CLIENTE?
-            response = service.refresh_token(resp_cookies.refresh_token)
-
-
+# DEVUELVE UNA REDIRECT RESPONSE
 @router.get("/login-url", status_code=status.HTTP_302_FOUND)
-def login_url(service: OAuthServ) -> RedirectResponse:
+def login_url(service: OAuthServ) -> Response:
     return service.login_url()
 
+# DEVUELVE UNA REDIRECT RESPONSE
 @router.get("/logout-url", status_code=status.HTTP_302_FOUND)
-def logout_url(service: OAuthServ) -> RedirectResponse:
+def logout_url(service: OAuthServ) -> Response:
     return service.logout_url()
 
 @router.get("/callback")
 def callback(service: OAuthServ, request: callback_request = None, req_cookies: cookies = None) -> Response:
     return service.auth_callback(request, req_cookies)
 
-@router.post("/obtain-token", status_code=status.HTTP_200_OK, dependencies=[Depends(refresh_monitor)])
+@router.post("/obtain-token", status_code=status.HTTP_200_OK)
 def obtain_token(service: OAuthServ, req_cookies: cookies = None, option: Annotated[str, Body()] = "access") -> Response:
     return service.obtain_tokens(req_cookies, option)

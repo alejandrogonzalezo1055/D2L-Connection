@@ -1,5 +1,6 @@
 from pydantic import BaseModel, field_validator
 from fastapi.responses import Response, RedirectResponse, JSONResponse
+from fastapi import Cookie
 
 
 # es para query params
@@ -23,18 +24,24 @@ class ResponseCookies(BaseModel):
     response_time: str = None
 
 
-def create_redirect_response(data: dict | None = None) -> RedirectResponse:
+def add_cookies(response: Response, cookies_data: list[dict]) -> Response:
+    for cookie in cookies_data:
+        response.set_cookie(
+            key=cookie["key"],
+            value=cookie["value"],
+            httponly=cookie["httponly"],
+            samesite=cookie["samesite"],
+            max_age=cookie["max_age"]
+        )
+
+    return response
+
+
+def create_redirect_response(data: dict | None = None) -> Response:
     response = RedirectResponse(url=data["url"], status_code=data["status_code"])
 
     if data["cookies"] is not None:
-        for cookie in data["cookies"]:
-            response.set_cookie(
-                key=cookie["key"],
-                value=cookie["value"],
-                httponly=cookie["httponly"],
-                samesite=cookie["samesite"],
-                max_age=cookie["max_age"]
-            )
+        response = add_cookies(response, data["cookies"])
 
     return response
 
@@ -48,14 +55,7 @@ def create_response(data: dict | None = None) -> Response:
         response = JSONResponse(content=data["content"], status_code=data["status_code"])
 
     if data["cookies"] is not None:
-        for cookie in data["cookies"]:
-            response.set_cookie(
-                key=cookie["key"],
-                value=cookie["value"],
-                httponly=cookie["httponly"],
-                samesite=cookie["samesite"],
-                max_age=cookie["max_age"]
-            )
+        response = add_cookies(response, data["cookies"])
 
     return response
 
