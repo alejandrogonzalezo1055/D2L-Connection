@@ -2,16 +2,17 @@ from fastapi import APIRouter, FastAPI, Request
 from http.cookies import SimpleCookie
 from datetime import datetime
 
+from app.routers.oauth_router import OAuthServ
 from common.errors import register_error_handler
 from app.routers import health, oauth_router
-from app.services.oauth_service import OAuthService
+
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="D2L Connection",version="1.0.0")
 
     @app.middleware("http")
-    async def middleware(service: OAuthService, request: Request, call_next):
+    async def middleware(request: Request, call_next):
         response = await call_next(request)
 
         resp_cookies_headers = response.headers.getlist("set-cookie")
@@ -26,10 +27,10 @@ def create_app() -> FastAPI:
             initial_response_time = datetime.strptime(response_time, "%H:%M:%S")
             time_diff = datetime.now() - initial_response_time
 
-            if time_diff.seconds >= 3000:
-                response = service.auto_obtain_tokens("refresh", response ,refresh_token=resp_cookies["refresh_token"].value, auth_code=resp_cookies["auth_code"].value)
+            if 3000 <= time_diff.seconds < 3600:
+                response = OAuthServ.auto_obtain_tokens("refresh", response ,refresh_token=resp_cookies["refresh_token"].value)
             elif time_diff.seconds > 3600:
-                response = service.auto_obtain_tokens("access", response, refresh_token=resp_cookies["refresh_token"].value, auth_code=resp_cookies["auth_code"].value)
+                response = OAuthServ.auto_obtain_tokens("access", response)
 
         return response
 

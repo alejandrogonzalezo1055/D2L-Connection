@@ -1,0 +1,38 @@
+# Entornos virtuales
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Variables de entorno y secretos
+# common/.env contiene credenciales: nunca se versiona.
+.env
+*.env
+.env.*
+common/.env
+# Plantillas sin secretos: SI se versionan.
+!.env.example
+!common/.env.example
+
+# IDE / editores
+.idea/
+.vscode/
+
+# Herramientas de pruebas y linters
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

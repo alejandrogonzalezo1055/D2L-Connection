@@ -1,5 +1,4 @@
-from fastapi import HTTPException, status, Query, Cookie, Body
-from fastapi.params import Depends
+from fastapi import HTTPException, status, Query, Cookie
 from fastapi.responses import Response, JSONResponse
 
 from functools import lru_cache
@@ -29,20 +28,26 @@ class OAuthService:
         self.d2l_client = httpx.Client()
 
 
-    def login_url(self) -> Response:
+    def auth_url(self, redirect_uri: str) -> tuple[str, str]:
         url = "http://" + self.settings.mock_auth_base_url + ":8800/oauth2/auth"
         state = secrets.token_urlsafe(24)
 
         params = {
             "response_type": "code",
             "client_id": self.settings.app_id,
-            "redirect_uri": "http://localhost:9000/auth/callback",
+            "redirect_uri": redirect_uri,
             "scope": self.settings.app_scope,
             "state": state
         }
 
+        return f"{url}?{urlencode(params)}", state
+
+
+    def login_url(self) -> Response:
+        url, state = self.auth_url("http://localhost:9000/auth/callback")
+
         response_data = {
-            "url": f"{url}?{urlencode(params)}",
+            "url": url,
             "status_code": status.HTTP_302_FOUND,
             "cookies":[
                 {
@@ -133,6 +138,17 @@ class OAuthService:
         url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
 
         match option:
+            case "refresh":
+                response = self.d2l_client.post(
+                    url=url,
+                    auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
+                    data={
+                        "grant_type": self.token_options["refresh"],
+                        "refresh_token": refresh_token
+                    }
+                ).json()
+
+                return response, datetime.now()
             case "access":
                 response = self.d2l_client.post(
                     url=url,
@@ -141,17 +157,6 @@ class OAuthService:
                         "grant_type": self.token_options["access"],
                         "code": auth_code,
                         "redirect_uri": "http://localhost:9000/auth/callback"
-                    }
-                ).json()
-
-                return response, datetime.now()
-            case "refresh":
-                response = self.d2l_client.post(
-                    url=url,
-                    auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
-                    data={
-                        "grant_type": self.token_options["refresh"],
-                        "refresh_token": refresh_token
                     }
                 ).json()
 
@@ -256,32 +261,58 @@ class OAuthService:
         return create_response(response_data)
 
 
-    def auto_obtain_tokens(self, option: str, response: Response | None, refresh_token: cookie, auth_code: cookie) -> Response:
+    def auto_obtain_tokens(self, option: str, response: Response | None, refresh_token: cookie = None) -> Response:
         if not response:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La respuesta no existe o esta vacia"
             )
 
-        if not refresh_token or not auth_code:
+        if not refresh_token and option != "access":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No existe el token"
             )
 
         match option:
-            case "access":
-                response = self.auto_access_token(response, auth_code)
             case "refresh":
                 response = self.auto_refresh_token(response, refresh_token)
+            case "access":
+                response = self.auto_access_token(response)
 
         return response
 
 
-    def auto_access_token(self, response: Response, auth_code: cookie) -> Response:
-        json_response, response_time = self.token_req("access", auth_code=auth_code)
+    def auto_auth_code(self) -> str | None:
+        auth_url, state = self.auth_url("http://localhost:9000/auth/auto-callback")
 
-        if "error" not in json_response.keys():
+        auth_code_resp = self.d2l_client.get(url=auth_url, follow_redirects=False)
+
+        resp_location_header = auth_code_resp.headers.get("location")
+
+        if resp_location_header:
+            auth_code_url = httpx.URL(resp_location_header)
+
+            query_params = dict(auth_code_url.params)
+
+            if query_params.get("state") != state:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El estado de la respuesta no coincide con el estado de la peticion"
+                )
+
+            return query_params.get("code")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No tiene la url de redireccion con el auth_code"
+            )
+
+
+    def auto_access_token(self, response: Response) -> Response:
+        json_response, response_time = self.token_req("access", auth_code=self.auto_auth_code())
+
+        if json_response and "error" not in json_response.keys():
             cookies_data = [
                 {
                     "key": "access_token",
@@ -310,7 +341,10 @@ class OAuthService:
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Error: {json_response["error"]}\n Descripcion: {json_response["error_description"]}"
+                detail={
+                    "error": json_response["error"],
+                    "error_description": json_response["error_description"]
+                }
             )
 
         return response
@@ -319,7 +353,7 @@ class OAuthService:
     def auto_refresh_token(self, response: Response, refresh_token: cookie) -> Response:
         json_response, response_time = self.token_req("refresh", refresh_token=refresh_token)
 
-        if "error" not in json_response.keys():
+        if json_response and "error" not in json_response.keys():
             cookies_data = [
                 {
                     "key": "access_token",
@@ -348,7 +382,10 @@ class OAuthService:
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Error: {json_response["error"]}\n Descripcion: {json_response["error_description"]}"
+                detail={
+                    "error": json_response["error"],
+                    "error_description": json_response["error_description"]
+                }
             )
 
         return response

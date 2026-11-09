@@ -1,6 +1,5 @@
 from pydantic import BaseModel, field_validator
 from fastapi.responses import Response, RedirectResponse, JSONResponse
-from fastapi import Cookie
 
 
 # es para query params
@@ -12,7 +11,7 @@ class CallbackRequest(BaseModel):
     @classmethod
     def check_state(cls, value: str) -> str:
         if len(value) < 32:
-            raise ValueError("el state de su peticion no tiene la longitud requerida")
+            raise ValueError("El state de su peticion no tiene la longitud requerida")
         return value
 
 
