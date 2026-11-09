@@ -9,7 +9,7 @@ import secrets
 import httpx
 
 from common.settings import get_settings
-from common.schemas import CallbackRequest, ResponseCookies, add_cookies, create_redirect_response, create_response
+from common.schemas import CallbackRequest, ResponseCookies, TOKEN_LIFE, add_cookies, create_redirect_response, create_response
 from common.errors import get_logger
 
 
@@ -29,6 +29,7 @@ class OAuthService:
             "refresh": "refresh_token"
         }
         self.d2l_client = httpx.Client()
+        self.async_d2l_client = httpx.AsyncClient()
 
 
     def auth_url(self, redirect_uri: str) -> tuple[str, str]:
@@ -172,6 +173,39 @@ class OAuthService:
         return None, None, None
 
 
+    async def auto_token_req(self, option: str, auth_code: cookie = None, refresh_token: cookie = None) -> token_rep:
+        url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
+
+        match option:
+            case "refresh":
+                response = await self.async_d2l_client.post(
+                    url=url,
+                    auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
+                    data={
+                        "grant_type": self.token_options["refresh"],
+                        "refresh_token": refresh_token
+                    }
+                )
+                Logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
+
+                return response.json(), response.status_code, datetime.now()
+            case "access":
+                response = await self.async_d2l_client.post(
+                    url=url,
+                    auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
+                    data={
+                        "grant_type": self.token_options["access"],
+                        "code": auth_code,
+                        "redirect_uri": "http://localhost:9000/auth/callback"
+                    }
+                )
+                Logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
+
+                return response.json(), response.status_code, datetime.now()
+
+        return None, None, None
+
+
     def access_token(self, auth_code: cookie) -> Response:
         json_response, resp_status, response_time = self.token_req("access", auth_code=auth_code)
 
@@ -196,14 +230,14 @@ class OAuthService:
                         "value": json_response["refresh_token"],
                         "httponly": True,
                         "samesite": "lax",
-                        "max_age": json_response["expires_in"] + 900
+                        "max_age": json_response["expires_in"]
                     },
                     {
                         "key": "response_time",
                         "value": response_time.strftime("%H:%M:%S"),
                         "httponly": True,
                         "samesite": "lax",
-                        "max_age": json_response["expires_in"] + 900
+                        "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
                     }
                 ]
             }
@@ -252,7 +286,7 @@ class OAuthService:
                         "value": response_time.strftime("%H:%M:%S"),
                         "httponly": True,
                         "samesite": "lax",
-                        "max_age": json_response["expires_in"]
+                        "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
                     }
                 ]
             }
@@ -270,7 +304,7 @@ class OAuthService:
         return create_response(response_data)
 
 
-    def auto_obtain_tokens(self, option: str, response: Response | None, refresh_token: cookie = None) -> Response:
+    def auto_obtain_tokens(self, option: str, response: Response | None, resp_cookies: list[dict] = None) -> Response:
         if not response:
             Logger.error(
                 f"Auto-ObtainTokens.\n"
@@ -281,7 +315,7 @@ class OAuthService:
                 detail="La respuesta no existe o esta vacia"
             )
 
-        if not refresh_token and option != "access":
+        if not resp_cookies[1]["refresh_token"] and option != "access":
             Logger.error(
                 f"Auto-ObtainTokens.\n"
                 f"HTTP code: {status.HTTP_404_NOT_FOUND}. No existe el token."
@@ -297,7 +331,7 @@ class OAuthService:
                     f"Auto-ObtainTokens.\n"
                     f"Se va a obtener el refresh token."
                 )
-                response = self.auto_refresh_token(response, refresh_token)
+                response = self.auto_refresh_token(response, resp_cookies[1]["refresh_token"])
                 Logger.info(
                     f"Auto-ObtainTokens.\n"
                     f"Se obtuvo el refresh token."
@@ -316,10 +350,13 @@ class OAuthService:
         return response
 
 
-    def auto_auth_code(self) -> str | None:
+    async def auto_auth_code(self) -> str | None:
         auth_url, state = self.auth_url("http://localhost:9000/auth/auto-callback")
 
-        auth_code_resp = self.d2l_client.get(url=auth_url, follow_redirects=False)
+        auth_code_resp = await self.async_d2l_client.get(
+            url=auth_url,
+            follow_redirects=False
+        )
         Logger.info("Auto-AuthCode. Se envio una peticion GET al cliente d2l.")
 
         resp_location_header = auth_code_resp.headers.get("location")
@@ -350,7 +387,7 @@ class OAuthService:
 
 
     def auto_access_token(self, response: Response) -> Response:
-        json_response, resp_status, response_time = self.token_req("access", auth_code=self.auto_auth_code())
+        json_response, resp_status, response_time = self.auto_token_req("access", auth_code=self.auto_auth_code())
 
         if json_response and "error" not in json_response.keys():
             cookies_data = [
@@ -373,7 +410,7 @@ class OAuthService:
                     "value": response_time.strftime("%H:%M:%S"),
                     "httponly": True,
                     "samesite": "lax",
-                    "max_age": json_response["expires_in"]
+                    "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
                 }
             ]
 
@@ -391,7 +428,7 @@ class OAuthService:
 
 
     def auto_refresh_token(self, response: Response, refresh_token: cookie) -> Response:
-        json_response, resp_status, response_time = self.token_req("refresh", refresh_token=refresh_token)
+        json_response, resp_status, response_time = self.auto_token_req("refresh", refresh_token=refresh_token)
 
         if json_response and "error" not in json_response.keys():
             cookies_data = [
@@ -414,7 +451,7 @@ class OAuthService:
                     "value": response_time.strftime("%H:%M:%S"),
                     "httponly": True,
                     "samesite": "lax",
-                    "max_age": json_response["expires_in"]
+                    "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
                 }
             ]
 

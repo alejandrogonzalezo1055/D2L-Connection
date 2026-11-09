@@ -1,5 +1,9 @@
-from pydantic import BaseModel, field_validator
 from fastapi.responses import Response, RedirectResponse, JSONResponse
+from pydantic import BaseModel, field_validator
+from typing import Final
+
+
+TOKEN_LIFE: Final[int] = 60
 
 
 # es para query params
