@@ -7,6 +7,8 @@ from common.errors import register_error_handler
 from app.routers import health, oauth_router
 
 
+TOKEN_LIFE = 3600
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="D2L Connection",version="1.0.0")
@@ -27,9 +29,9 @@ def create_app() -> FastAPI:
             initial_response_time = datetime.strptime(response_time, "%H:%M:%S")
             time_diff = datetime.now() - initial_response_time
 
-            if 3000 <= time_diff.seconds < 3600:
+            if TOKEN_LIFE - TOKEN_LIFE*20/100 <= time_diff.seconds < TOKEN_LIFE:
                 response = OAuthServ.auto_obtain_tokens("refresh", response ,refresh_token=resp_cookies["refresh_token"].value)
-            elif time_diff.seconds > 3600:
+            elif time_diff.seconds > TOKEN_LIFE:
                 response = OAuthServ.auto_obtain_tokens("access", response)
 
         return response

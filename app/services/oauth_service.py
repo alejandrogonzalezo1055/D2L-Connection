@@ -10,12 +10,15 @@ import httpx
 
 from common.settings import get_settings
 from common.schemas import CallbackRequest, ResponseCookies, add_cookies, create_redirect_response, create_response
+from common.errors import get_logger
 
+
+Logger = get_logger().logger
 
 callback_request = Annotated[CallbackRequest | None, Query()]
 cookies = Annotated[ResponseCookies | None, Cookie()]
 cookie = Annotated[str | None, Cookie()]
-token_rep = Annotated[tuple[dict,datetime] | tuple[None,None], "Parametro Necesario"]
+token_rep = Annotated[tuple[dict,int,datetime] | tuple[None,None,None], "Parametro Necesario"]
 
 
 class OAuthService:
@@ -78,24 +81,24 @@ class OAuthService:
     def auth_callback(self, request: callback_request, req_cookies: cookies) -> Response:
         if not req_cookies:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="La petición no trae cookies o estas han expirado"
             )
 
         if not req_cookies.oauth_state:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="La petición no trae estado"
             )
 
         if request.state != req_cookies.oauth_state:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_409_CONFLICT,
                 detail="El estado de la petición no coincide con el estado de la cookie"
             )
 
         response_data = {
-            "status_code": status.HTTP_200_OK,
+            "status_code": status.HTTP_202_ACCEPTED,
             "content": "Se obtuvo el codigo de autorizacion",
             "cookies": [
                 {
@@ -113,6 +116,18 @@ class OAuthService:
 
 
     def obtain_tokens(self, req_cookies: cookies, option: str) -> Response:
+        if not req_cookies:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="La petición no trae cookie o esta ha expirado"
+            )
+
+        if option not in self.token_options.keys():
+            raise HTTPException(
+                status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                detail="El token que quiere obtener no existe"
+            )
+
         response = JSONResponse(content=None)
         if option in self.token_options.keys() and req_cookies:
             match option:
@@ -120,16 +135,6 @@ class OAuthService:
                     response = self.access_token(req_cookies.auth_code)
                 case "refresh":
                     response = self.refresh_token(req_cookies.refresh_token)
-        elif not req_cookies:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La petición no trae cookie o esta ha expirado"
-            )
-        elif option not in self.token_options.keys():
-            raise HTTPException(
-                status_code=status.HTTP_406_NOT_ACCEPTABLE,
-                detail="El token que quiere obtener no existe"
-            )
 
         return response
 
@@ -146,9 +151,10 @@ class OAuthService:
                         "grant_type": self.token_options["refresh"],
                         "refresh_token": refresh_token
                     }
-                ).json()
+                )
+                Logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
 
-                return response, datetime.now()
+                return response.json(), response.status_code, datetime.now()
             case "access":
                 response = self.d2l_client.post(
                     url=url,
@@ -158,19 +164,20 @@ class OAuthService:
                         "code": auth_code,
                         "redirect_uri": "http://localhost:9000/auth/callback"
                     }
-                ).json()
+                )
+                Logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
 
-                return response, datetime.now()
+                return response.json(), response.status_code, datetime.now()
 
-        return None, None
+        return None, None, None
 
 
     def access_token(self, auth_code: cookie) -> Response:
-        json_response, response_time = self.token_req("access", auth_code=auth_code)
+        json_response, resp_status, response_time = self.token_req("access", auth_code=auth_code)
 
         if "error" not in json_response.keys():
             response_data = {
-                "status_code": status.HTTP_200_OK,
+                "status_code": status.HTTP_202_ACCEPTED,
                 "content": {
                     "token_type": json_response["token_type"],
                     "expires_in": json_response["expires_in"],
@@ -202,8 +209,9 @@ class OAuthService:
             }
         else:
             response_data = {
-                "status_code": status.HTTP_400_BAD_REQUEST,
+                "status_code": resp_status,
                 "content": {
+                    "token_type":"access",
                     "error": json_response["error"],
                     "error_description": json_response["error_description"]
                 },
@@ -214,11 +222,11 @@ class OAuthService:
 
 
     def refresh_token(self, refresh_token: cookie) -> Response:
-        json_response, response_time = self.token_req("refresh", refresh_token=refresh_token)
+        json_response, resp_status, response_time = self.token_req("refresh", refresh_token=refresh_token)
 
         if "error" not in json_response.keys():
             response_data = {
-                "status_code": status.HTTP_200_OK,
+                "status_code": status.HTTP_202_ACCEPTED,
                 "content": {
                     "token_type": json_response["token_type"],
                     "expires_in": json_response["expires_in"],
@@ -250,8 +258,9 @@ class OAuthService:
             }
         else:
             response_data = {
-                "status_code": status.HTTP_400_BAD_REQUEST,
+                "status_code": resp_status,
                 "content": {
+                    "token_type": "refresh",
                     "error": json_response["error"],
                     "error_description": json_response["error_description"]
                 },
@@ -263,22 +272,46 @@ class OAuthService:
 
     def auto_obtain_tokens(self, option: str, response: Response | None, refresh_token: cookie = None) -> Response:
         if not response:
+            Logger.error(
+                f"Auto-ObtainTokens.\n"
+                f"HTTP code: {status.HTTP_404_NOT_FOUND}. La respuesta no existe o esta vacia."
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="La respuesta no existe o esta vacia"
             )
 
         if not refresh_token and option != "access":
+            Logger.error(
+                f"Auto-ObtainTokens.\n"
+                f"HTTP code: {status.HTTP_404_NOT_FOUND}. No existe el token."
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="No existe el token"
             )
 
         match option:
             case "refresh":
+                Logger.info(
+                    f"Auto-ObtainTokens.\n"
+                    f"Se va a obtener el refresh token."
+                )
                 response = self.auto_refresh_token(response, refresh_token)
+                Logger.info(
+                    f"Auto-ObtainTokens.\n"
+                    f"Se obtuvo el refresh token."
+                )
             case "access":
+                Logger.info(
+                    f"Auto-ObtainTokens.\n"
+                    f"Se va a obtener el access token."
+                )
                 response = self.auto_access_token(response)
+                Logger.info(
+                    f"Auto-ObtainTokens.\n"
+                    f"Se obtuvo el access token."
+                )
 
         return response
 
@@ -287,6 +320,7 @@ class OAuthService:
         auth_url, state = self.auth_url("http://localhost:9000/auth/auto-callback")
 
         auth_code_resp = self.d2l_client.get(url=auth_url, follow_redirects=False)
+        Logger.info("Auto-AuthCode. Se envio una peticion GET al cliente d2l.")
 
         resp_location_header = auth_code_resp.headers.get("location")
 
@@ -296,21 +330,27 @@ class OAuthService:
             query_params = dict(auth_code_url.params)
 
             if query_params.get("state") != state:
+                Logger.error(
+                    f"Auto-AuthCode.\n"
+                    f"HTTP code: {status.HTTP_409_CONFLICT}.\n"
+                    f"El estado de la respuesta no coincide con el estado de la peticion"
+                )
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="El estado de la respuesta no coincide con el estado de la peticion"
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="El estado de la respuesta no coincide con el estado de la peticion."
                 )
 
             return query_params.get("code")
         else:
+            Logger.error("Auto-AuthCode. No tiene la url de redireccion con el auth_code")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="No tiene la url de redireccion con el auth_code"
             )
 
 
     def auto_access_token(self, response: Response) -> Response:
-        json_response, response_time = self.token_req("access", auth_code=self.auto_auth_code())
+        json_response, resp_status, response_time = self.token_req("access", auth_code=self.auto_auth_code())
 
         if json_response and "error" not in json_response.keys():
             cookies_data = [
@@ -338,20 +378,20 @@ class OAuthService:
             ]
 
             response = add_cookies(response, cookies_data)
+            Logger.info("Auto-Access. Se añadieron las tokens con los tokens generados automaticamente")
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": json_response["error"],
-                    "error_description": json_response["error_description"]
-                }
+            Logger.error(
+                f"status_code: {resp_status}\n"
+                f"token_type: auto-access\n"
+                f"error: {json_response["error"]}\n"
+                f"error_description: {json_response["error_description"]}"
             )
 
         return response
 
 
     def auto_refresh_token(self, response: Response, refresh_token: cookie) -> Response:
-        json_response, response_time = self.token_req("refresh", refresh_token=refresh_token)
+        json_response, resp_status, response_time = self.token_req("refresh", refresh_token=refresh_token)
 
         if json_response and "error" not in json_response.keys():
             cookies_data = [
@@ -379,13 +419,13 @@ class OAuthService:
             ]
 
             response = add_cookies(response, cookies_data)
+            Logger.info("Auto-Refresh. Se añadieron las tokens con los tokens generados automaticamente")
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": json_response["error"],
-                    "error_description": json_response["error_description"]
-                }
+            Logger.error(
+                f"status_code: {resp_status}\n"
+                f"token_type: auto-refresh\n"
+                f"error: {json_response["error"]}\n"
+                f"error_description: {json_response["error_description"]}"
             )
 
         return response
