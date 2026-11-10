@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status, Query, Cookie
+from fastapi import HTTPException, status, Query, Cookie, Request
 from fastapi.responses import Response, JSONResponse
 
 from functools import lru_cache
@@ -173,37 +173,23 @@ class OAuthService:
         return None, None, None
 
 
-    async def auto_token_req(self, option: str, auth_code: cookie = None, refresh_token: cookie = None) -> token_rep:
+    async def auto_token_req(self, refresh_token: cookie = None) -> token_rep:
         url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
 
-        match option:
-            case "refresh":
-                response = await self.async_d2l_client.post(
-                    url=url,
-                    auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
-                    data={
-                        "grant_type": self.token_options["refresh"],
-                        "refresh_token": refresh_token
-                    }
-                )
-                Logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
+        response = await self.async_d2l_client.post(
+            url=url,
+            auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
+            data={
+                "grant_type": self.token_options["refresh"],
+                "refresh_token": refresh_token
+            }
+        )
+        Logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
 
-                return response.json(), response.status_code, datetime.now()
-            case "access":
-                response = await self.async_d2l_client.post(
-                    url=url,
-                    auth=(self.settings.app_id, self.settings.app_secret.get_secret_value()),
-                    data={
-                        "grant_type": self.token_options["access"],
-                        "code": auth_code,
-                        "redirect_uri": "http://localhost:9000/auth/callback"
-                    }
-                )
-                Logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
-
-                return response.json(), response.status_code, datetime.now()
-
-        return None, None, None
+        if "error" not in response.json().keys():
+            return response.json(), response.status_code, datetime.now()
+        else:
+            return None, None, None
 
 
     def access_token(self, auth_code: cookie) -> Response:
@@ -304,7 +290,7 @@ class OAuthService:
         return create_response(response_data)
 
 
-    def auto_obtain_tokens(self, option: str, response: Response | None, resp_cookies: list[dict] = None) -> Response:
+    def auto_obtain_tokens(self, option: str, response: Response | None = None, refresh_token: cookie = None) -> Response:
         if not response:
             Logger.error(
                 f"Auto-ObtainTokens.\n"
@@ -315,10 +301,10 @@ class OAuthService:
                 detail="La respuesta no existe o esta vacia"
             )
 
-        if not resp_cookies[1]["refresh_token"] and option != "access":
+        if not refresh_token:
             Logger.error(
                 f"Auto-ObtainTokens.\n"
-                f"HTTP code: {status.HTTP_404_NOT_FOUND}. No existe el token."
+                f"HTTP code: {status.HTTP_404_NOT_FOUND}. No existe el refresh token o ya caduco."
             )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -327,108 +313,22 @@ class OAuthService:
 
         match option:
             case "refresh":
-                Logger.info(
-                    f"Auto-ObtainTokens.\n"
-                    f"Se va a obtener el refresh token."
-                )
-                response = self.auto_refresh_token(response, resp_cookies[1]["refresh_token"])
-                Logger.info(
-                    f"Auto-ObtainTokens.\n"
-                    f"Se obtuvo el refresh token."
-                )
+                Logger.info(f"Auto-ObtainTokens.\nSe va a obtener el refresh token.")
+                response = self.auto_refresh_token(response, refresh_token)
+                Logger.info(f"Auto-ObtainTokens.\nSe obtuvo el refresh token.")
             case "access":
-                Logger.info(
-                    f"Auto-ObtainTokens.\n"
-                    f"Se va a obtener el access token."
-                )
-                response = self.auto_access_token(response)
-                Logger.info(
-                    f"Auto-ObtainTokens.\n"
-                    f"Se obtuvo el access token."
-                )
-
-        return response
-
-
-    async def auto_auth_code(self) -> str | None:
-        auth_url, state = self.auth_url("http://localhost:9000/auth/auto-callback")
-
-        auth_code_resp = await self.async_d2l_client.get(
-            url=auth_url,
-            follow_redirects=False
-        )
-        Logger.info("Auto-AuthCode. Se envio una peticion GET al cliente d2l.")
-
-        resp_location_header = auth_code_resp.headers.get("location")
-
-        if resp_location_header:
-            auth_code_url = httpx.URL(resp_location_header)
-
-            query_params = dict(auth_code_url.params)
-
-            if query_params.get("state") != state:
-                Logger.error(
-                    f"Auto-AuthCode.\n"
-                    f"HTTP code: {status.HTTP_409_CONFLICT}.\n"
-                    f"El estado de la respuesta no coincide con el estado de la peticion"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="El estado de la respuesta no coincide con el estado de la peticion."
-                )
-
-            return query_params.get("code")
-        else:
-            Logger.error("Auto-AuthCode. No tiene la url de redireccion con el auth_code")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="No tiene la url de redireccion con el auth_code"
-            )
-
-
-    def auto_access_token(self, response: Response) -> Response:
-        json_response, resp_status, response_time = self.auto_token_req("access", auth_code=self.auto_auth_code())
-
-        if json_response and "error" not in json_response.keys():
-            cookies_data = [
-                {
-                    "key": "access_token",
-                    "value": json_response["access_token"],
-                    "httponly": True,
-                    "samesite": "lax",
-                    "max_age": json_response["expires_in"]
-                },
-                {
-                    "key": "refresh_token",
-                    "value": json_response["refresh_token"],
-                    "httponly": True,
-                    "samesite": "lax",
-                    "max_age": json_response["expires_in"]
-                },
-                {
-                    "key": "response_time",
-                    "value": response_time.strftime("%H:%M:%S"),
-                    "httponly": True,
-                    "samesite": "lax",
-                    "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
+                response_data = {
+                    "status_code": status.HTTP_408_REQUEST_TIMEOUT,
+                    "content": "Su token de refresco ya no es valido, debe volver a obtener el auth_code y el access token",
+                    "cookies": None
                 }
-            ]
-
-            response = add_cookies(response, cookies_data)
-            Logger.info("Auto-Access. Se añadieron las tokens con los tokens generados automaticamente")
-        else:
-            Logger.error(
-                f"status_code: {resp_status}\n"
-                f"token_type: auto-access\n"
-                f"error: {json_response["error"]}\n"
-                f"error_description: {json_response["error_description"]}"
-            )
+                response = create_response(response_data)
 
         return response
 
 
     def auto_refresh_token(self, response: Response, refresh_token: cookie) -> Response:
-        json_response, resp_status, response_time = self.auto_token_req("refresh", refresh_token=refresh_token)
+        json_response, resp_status, response_time = self.auto_token_req(refresh_token)
 
         if json_response and "error" not in json_response.keys():
             cookies_data = [
