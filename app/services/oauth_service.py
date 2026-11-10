@@ -49,7 +49,6 @@ class OAuthService:
 
 
     def login_url(self) -> Response:
-        # DEBE SE HTTPS
         url, state = self.auth_url(callback_url)
 
         response_data = {

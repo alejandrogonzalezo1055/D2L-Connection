@@ -3,7 +3,7 @@ from http.cookies import SimpleCookie
 from datetime import datetime
 import asyncio
 
-from app.routers import health, oauth_router
+from app.routers import health, oauth_router, lp_router
 from app.services.oauth_service import get_service
 from common.errors import register_error_handler
 from common.schemas import TOKEN_LIFE, create_response
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(oauth_router.router)
 
     api_v1 = APIRouter(prefix="/api/v1")
+    api_v1.include_router(lp_router.router)
     app.include_router(api_v1)
 
     @app.middleware("http")
