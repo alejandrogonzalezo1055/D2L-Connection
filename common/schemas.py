@@ -12,12 +12,13 @@ TOKEN_LIFE: Final[int] = 3600
 
 lp_version = Annotated[float | None, Path(ge=1.0, le=1.64)]
 
-def validate_version(version: lp_version) -> lp_version:
-    url = get_settings().get_base_url(1)
-    with httpx.Client() as client:
-        response = client.get(f"{url}/version").json()
+async def validate_version(version: lp_version) -> lp_version:
+    url = get_settings().get_api_url(1)
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url=f"{url}/versions/")
+        json_response = response.json()
 
-        product = next((p for p in response if p["ProductCode"] == "lp"), None)
+        product = next((p for p in json_response if p["ProductCode"] == "lp"), None)
 
         if product:
             product_version = next((v for v in product["SupportedVersions"] if float(v) == version), None)

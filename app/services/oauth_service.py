@@ -69,7 +69,7 @@ class OAuthService:
 
 
     def logout_url(self) -> Response:
-        url = self.settings.get_base_url(2) + "logout"
+        url = self.settings.get_api_url(2) + "/logout"
 
         response_data = {
             "url": url,

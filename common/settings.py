@@ -18,13 +18,13 @@ class Settings(BaseSettings):
     app_secret: FrozenSecret
     app_scope: str = None
 
-    def get_base_url(self, option: int) -> str:
+    def get_api_url(self, option: int) -> str:
         url = ""
         match option:
             case 1:
                 url = f"https://{self.api_base_url}/d2l/api"
             case 2:
-                url = f"https://{self.api_base_url}/d2l/"
+                url = f"https://{self.api_base_url}/d2l"
 
         return url
 
