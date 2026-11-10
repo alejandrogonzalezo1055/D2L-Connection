@@ -14,6 +14,7 @@ from common.errors import get_logger
 
 
 Logger = get_logger().logger
+callback_url = "https://localhost:9000/auth/callback"
 
 callback_request = Annotated[CallbackRequest | None, Query()]
 cookies = Annotated[ResponseCookies | None, Cookie()]
@@ -33,7 +34,7 @@ class OAuthService:
 
 
     def auth_url(self, redirect_uri: str) -> tuple[str, str]:
-        url = "http://" + self.settings.mock_auth_base_url + ":8800/oauth2/auth"
+        url = self.settings.get_oauth_url()
         state = secrets.token_urlsafe(24)
 
         params = {
@@ -48,7 +49,8 @@ class OAuthService:
 
 
     def login_url(self) -> Response:
-        url, state = self.auth_url("http://localhost:9000/auth/callback")
+        # DEBE SE HTTPS
+        url, state = self.auth_url(callback_url)
 
         response_data = {
             "url": url,
@@ -68,7 +70,7 @@ class OAuthService:
 
 
     def logout_url(self) -> Response:
-        url = "http://" + self.settings.mock_api_base_url + ":8800/d2l/logout"
+        url = self.settings.get_base_url(2) + "logout"
 
         response_data = {
             "url": url,
@@ -141,7 +143,7 @@ class OAuthService:
 
 
     def token_req(self, option: str, auth_code: cookie = None, refresh_token: cookie = None) -> token_rep:
-        url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
+        url = self.settings.get_token_url()
 
         match option:
             case "refresh":
@@ -163,7 +165,7 @@ class OAuthService:
                     data={
                         "grant_type": self.token_options["access"],
                         "code": auth_code,
-                        "redirect_uri": "http://localhost:9000/auth/callback"
+                        "redirect_uri": callback_url
                     }
                 )
                 Logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
@@ -174,7 +176,7 @@ class OAuthService:
 
 
     async def auto_token_req(self, refresh_token: cookie = None) -> token_rep:
-        url = "http://" + self.settings.mock_api_base_url + ":8800/core/connect/token"
+        url = self.settings.get_token_url()
 
         response = await self.async_d2l_client.post(
             url=url,
