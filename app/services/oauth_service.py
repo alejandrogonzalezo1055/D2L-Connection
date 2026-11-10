@@ -59,7 +59,7 @@ class OAuthService:
                     "value": state,
                     "httponly": True,
                     "samesite": "lax",
-                    "max_age": 300
+                    "max_age": TOKEN_LIFE*8.5/100
                 }
             ]
         }
@@ -107,7 +107,7 @@ class OAuthService:
                     "value": request.code,
                     "httponly": True,
                     "samesite": "lax",
-                    "max_age": 300
+                    "max_age": TOKEN_LIFE*8.5/100
                 }
             ]
         }
@@ -223,7 +223,7 @@ class OAuthService:
                         "value": response_time.strftime("%H:%M:%S"),
                         "httponly": True,
                         "samesite": "lax",
-                        "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
+                        "max_age": json_response["expires_in"]
                     }
                 ]
             }
@@ -272,7 +272,7 @@ class OAuthService:
                         "value": response_time.strftime("%H:%M:%S"),
                         "httponly": True,
                         "samesite": "lax",
-                        "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
+                        "max_age": json_response["expires_in"]
                     }
                 ]
             }
@@ -290,8 +290,8 @@ class OAuthService:
         return create_response(response_data)
 
 
-    def auto_obtain_tokens(self, option: str, response: Response | None = None, refresh_token: cookie = None) -> Response:
-        if not response:
+    async def auto_obtain_tokens(self, option: str, response: Response | None = None, refresh_token: cookie = None) -> Response:
+        if not response and option != "access":
             Logger.error(
                 f"Auto-ObtainTokens.\n"
                 f"HTTP code: {status.HTTP_404_NOT_FOUND}. La respuesta no existe o esta vacia."
@@ -301,7 +301,7 @@ class OAuthService:
                 detail="La respuesta no existe o esta vacia"
             )
 
-        if not refresh_token:
+        if not refresh_token and option != "access":
             Logger.error(
                 f"Auto-ObtainTokens.\n"
                 f"HTTP code: {status.HTTP_404_NOT_FOUND}. No existe el refresh token o ya caduco."
@@ -314,12 +314,12 @@ class OAuthService:
         match option:
             case "refresh":
                 Logger.info(f"Auto-ObtainTokens.\nSe va a obtener el refresh token.")
-                response = self.auto_refresh_token(response, refresh_token)
+                response = await self.auto_refresh_token(response, refresh_token)
                 Logger.info(f"Auto-ObtainTokens.\nSe obtuvo el refresh token.")
             case "access":
                 response_data = {
                     "status_code": status.HTTP_408_REQUEST_TIMEOUT,
-                    "content": "Su token de refresco ya no es valido, debe volver a obtener el auth_code y el access token",
+                    "content": "Su token de refresco expiro, vuelva a obtener el auth_code y el access token",
                     "cookies": None
                 }
                 response = create_response(response_data)
@@ -327,8 +327,8 @@ class OAuthService:
         return response
 
 
-    def auto_refresh_token(self, response: Response, refresh_token: cookie) -> Response:
-        json_response, resp_status, response_time = self.auto_token_req(refresh_token)
+    async def auto_refresh_token(self, response: Response, refresh_token: cookie) -> Response:
+        json_response, resp_status, response_time = await self.auto_token_req(refresh_token)
 
         if json_response and "error" not in json_response.keys():
             cookies_data = [
@@ -351,7 +351,7 @@ class OAuthService:
                     "value": response_time.strftime("%H:%M:%S"),
                     "httponly": True,
                     "samesite": "lax",
-                    "max_age": json_response["expires_in"] + TOKEN_LIFE*50/100
+                    "max_age": json_response["expires_in"]
                 }
             ]
 

@@ -35,9 +35,11 @@ def create_app() -> FastAPI:
             time_diff = datetime.now() - initial_response_time
 
             if TOKEN_LIFE - TOKEN_LIFE * 15 / 100 <= time_diff.seconds < TOKEN_LIFE:
-                response = OAuthServ.auto_obtain_tokens("refresh", response, refresh_token=resp_cookies["refresh_token"])
+                response = await OAuthServ.auto_obtain_tokens("refresh", response=response, refresh_token=resp_cookies["refresh_token"])
             elif time_diff.seconds > TOKEN_LIFE:
-                response = OAuthServ.auto_obtain_tokens("access")
+                response = await OAuthServ.auto_obtain_tokens("access")
+        """elif not resp_cookies:
+            response = await OAuthServ.auto_obtain_tokens("access")"""
 
         return response
 

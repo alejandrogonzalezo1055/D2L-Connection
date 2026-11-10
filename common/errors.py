@@ -23,5 +23,8 @@ def get_logger() -> Logger:
     return Logger()
 
 
+
+
+
 def register_error_handler(app: FastAPI) -> None:
     ...
