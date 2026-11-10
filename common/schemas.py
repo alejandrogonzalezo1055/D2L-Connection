@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 from typing import Final
 
 
-TOKEN_LIFE: Final[int] = 60
+TOKEN_LIFE: Final[int] = 3600
 
 
 # es para query params
