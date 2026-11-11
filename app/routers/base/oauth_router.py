@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, Query, Cookie, Body
 from fastapi.responses import Response
 from typing import Annotated
 
-from app.services.oauth_service import OAuthService, get_service
+from app.services.base.oauth_service import OAuthService, get_service
 from common.schemas import CallbackRequest, ResponseCookies
 
 

@@ -8,6 +8,7 @@ from datetime import datetime
 import secrets
 import httpx
 
+from common import settings
 from common.settings import get_settings, TOKEN_LIFE
 from common.schemas import CallbackRequest, ResponseCookies, add_cookies, delete_cookies, create_redirect_response, create_response
 from common.errors import get_logger
@@ -16,7 +17,10 @@ from common.errors import get_logger
 callback_request = Annotated[CallbackRequest | None, Query()]
 cookies = Annotated[ResponseCookies | None, Cookie()]
 cookie = Annotated[str | None, Cookie()]
-token_rep = Annotated[tuple[dict,int,datetime] | tuple[None,None,None], "Parametro Necesario"]
+token_rep = Annotated[tuple[dict,int,str] | tuple[None,None,None], "Parametro Necesario"]
+
+
+time_format = "%Y-%m-%d %H:%M:%S"
 
 
 class OAuthService:
@@ -60,13 +64,6 @@ class OAuthService:
                     "httponly": True,
                     "samesite": "lax",
                     "max_age": TOKEN_LIFE*8.5/100
-                },
-                {
-                    "key": "response_time",
-                    "value": datetime.now().strftime("%H:%M:%S"),
-                    "httponly": True,
-                    "samesite": "lax",
-                    "max_age": TOKEN_LIFE * 8.5 / 100
                 }
             ]
         }
@@ -112,13 +109,6 @@ class OAuthService:
                 {
                     "key": "auth_code",
                     "value": request.code,
-                    "httponly": True,
-                    "samesite": "lax",
-                    "max_age": TOKEN_LIFE*8.5/100
-                },
-                {
-                    "key": "response_time",
-                    "value": datetime.now().strftime("%H:%M:%S"),
                     "httponly": True,
                     "samesite": "lax",
                     "max_age": TOKEN_LIFE*8.5/100
@@ -169,7 +159,10 @@ class OAuthService:
                 )
                 self.logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
 
-                return response.json(), response.status_code, datetime.now()
+                if response.is_success:
+                    return response.json(), response.status_code, datetime.now().isoformat()
+                else:
+                    settings.brightspace_call = False
             case "access":
                 response = self.d2l_client.post(
                     url=url,
@@ -182,7 +175,10 @@ class OAuthService:
                 )
                 self.logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
 
-                return response.json(), response.status_code, datetime.now()
+                if response.is_success:
+                    return response.json(), response.status_code, datetime.now()
+                else:
+                    settings.brightspace_call = False
 
         return None, None, None
 
@@ -200,9 +196,10 @@ class OAuthService:
         )
         self.logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
 
-        if "error" not in response.json().keys():
-            return response.json(), response.status_code, datetime.now()
+        if response.is_success:
+            return response.json(), response.status_code, datetime.now().isoformat()
         else:
+            settings.brightspace_call = False
             return None, None, None
 
 
@@ -234,7 +231,7 @@ class OAuthService:
                     },
                     {
                         "key": "response_time",
-                        "value": response_time.strftime("%H:%M:%S"),
+                        "value": response_time,
                         "httponly": True,
                         "samesite": "lax",
                         "max_age": json_response["expires_in"]
@@ -283,7 +280,7 @@ class OAuthService:
                     },
                     {
                         "key": "response_time",
-                        "value": response_time.strftime("%H:%M:%S"),
+                        "value": response_time,
                         "httponly": True,
                         "samesite": "lax",
                         "max_age": json_response["expires_in"]
@@ -331,12 +328,13 @@ class OAuthService:
                 response = await self.auto_refresh_token(response, refresh_token)
                 self.logger.info(f"Auto-ObtainTokens.\nSe obtuvo el refresh token.")
             case "access":
+                self.logger.info(f"Auto-ObtainTokens.\nSe va a devolver un 408")
                 response_data = {
                     "status_code": status.HTTP_408_REQUEST_TIMEOUT,
                     "content": "Su token de refresco expiro, vuelva a obtener el auth_code y el access token",
                     "cookies": None
                 }
-                response = create_response(response_data)
+                response = delete_cookies(create_response(response_data))
 
         return response
 
@@ -362,7 +360,7 @@ class OAuthService:
                 },
                 {
                     "key": "response_time",
-                    "value": response_time.strftime("%H:%M:%S"),
+                    "value": response_time,
                     "httponly": True,
                     "samesite": "lax",
                     "max_age": json_response["expires_in"]

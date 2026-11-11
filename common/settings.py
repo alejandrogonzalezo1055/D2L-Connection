@@ -8,6 +8,7 @@ FrozenSecret = Annotated[SecretStr, Field(default=None, frozen=True)]
 
 
 TOKEN_LIFE: Final[int] = 3600
+brightspace_call = True
 
 
 class Settings(BaseSettings):
@@ -16,11 +17,20 @@ class Settings(BaseSettings):
         validate_assignment=True,
         hide_input_in_errors=True
     )
+
     api_base_url: str = None
     auth_base_url: str = None
     app_id: str = None
     app_secret: FrozenSecret
     app_scope: str = None
+
+    internal_api_key: FrozenSecret
+    python_api_key: FrozenSecret
+    go_base_url: str = None
+    frontend_url: str = None
+    ca_file: str = None
+    lp_version: str = None
+    le_version: str = None
 
     def get_api_url(self, option: int) -> str:
         url = ""

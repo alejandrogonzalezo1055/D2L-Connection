@@ -8,11 +8,11 @@ from datetime import datetime
 from common.errors import Logger
 from common.settings import TOKEN_LIFE
 from common.schemas import delete_cookies, create_response
-from app.services.oauth_service import get_service
+from app.services.base.oauth_service import get_service
 
 
 LIM_INTENTOS_LOGIN = 8
-VENTANA_LOGIN = 60
+VENTANA_LOGIN = 300
 BLOQUEO_LOGIN = VENTANA_LOGIN*2
 
 
@@ -37,13 +37,14 @@ class Middleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        if "response_time" in req_cookies.keys():
+        if "/auth/" not in request.url.path and "response_time" in req_cookies.keys():
             response_time = req_cookies["response_time"]
 
             initial_response_time = datetime.strptime(response_time, "%H:%M:%S")
             time_diff = datetime.now() - initial_response_time
+            lim_inf = self.token_life - self.token_life*15/100
 
-            if self.token_life - self.token_life*15/100 <= time_diff.seconds < self.token_life:
+            if lim_inf <= time_diff.seconds < self.token_life and "refresh_token" in req_cookies.keys():
                 response = await self.oauth_service.auto_obtain_tokens("refresh", response=response, refresh_token=req_cookies["refresh_token"])
             elif time_diff.seconds > self.token_life:
                 response = await self.oauth_service.auto_obtain_tokens("access")

@@ -1,20 +1,29 @@
-from fastapi import Path, HTTPException, status
+from fastapi import Path, HTTPException, status, Header
 from fastapi.responses import Response, RedirectResponse, JSONResponse
 from pydantic import BaseModel, field_validator
 from typing import Annotated
 import httpx
+import secrets
 
 from common.settings import get_settings
 
 
-product_version = Annotated[float | None, Path()]
+ProductVersion = Annotated[float | None, Path()]
+
+
+def require_internal_key(authorization: Annotated[str | None, Header()] = None):
+    ok = False
+    if authorization and authorization.startswith("Bearer "):
+        ok = secrets.compare_digest(authorization[7:], get_settings().python_api_key.get_secret_value())
+    if not ok:
+        raise HTTPException(status_code=401)
 
 
 class ProductVersionValidator():
     def __init__(self, product: str):
         self.product = product
 
-    async def __call__(self, version: product_version) -> product_version:
+    async def __call__(self, product_version: ProductVersion) -> ProductVersion:
         url = get_settings().get_api_url(1)
         async with httpx.AsyncClient() as client:
             response = await client.get(url=f"{url}/versions/")
@@ -23,13 +32,13 @@ class ProductVersionValidator():
             product = next((p for p in json_response if p["ProductCode"] == self.product), None)
 
             if product:
-                product_version = next((v for v in product["SupportedVersions"] if float(v) == version), None)
-                if product_version:
-                    version = product_version
+                version = next((v for v in product["SupportedVersions"] if float(v) == product_version), None)
+                if version:
+                    product_version = version
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_406_NOT_ACCEPTABLE,
-                        detail=f"La version de la peticion '{version}' no es valida"
+                        detail=f"La version de la peticion '{product_version}' no es valida"
                     )
             else:
                 raise HTTPException(
@@ -37,7 +46,7 @@ class ProductVersionValidator():
                     detail=f"El producto con codigo '{product["ProductCode"]}' no existe"
                 )
 
-        return version
+        return product_version
 
 
 # es para query params
