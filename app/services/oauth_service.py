@@ -60,6 +60,13 @@ class OAuthService:
                     "httponly": True,
                     "samesite": "lax",
                     "max_age": TOKEN_LIFE*8.5/100
+                },
+                {
+                    "key": "response_time",
+                    "value": datetime.now().strftime("%H:%M:%S"),
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": TOKEN_LIFE * 8.5 / 100
                 }
             ]
         }
@@ -77,6 +84,20 @@ class OAuthService:
         }
 
         return create_redirect_response(response_data)
+
+
+    def auto_logout(self) -> bool:
+        url = self.settings.get_api_url(2) + "/logout"
+
+        response = self.d2l_client.get(
+            url=url,
+            follow_redirects=False
+        )
+
+        if response.is_error:
+            return False
+        else:
+            return True
 
 
     def auth_callback(self, request: callback_request, req_cookies: cookies) -> Response:
@@ -105,6 +126,13 @@ class OAuthService:
                 {
                     "key": "auth_code",
                     "value": request.code,
+                    "httponly": True,
+                    "samesite": "lax",
+                    "max_age": TOKEN_LIFE*8.5/100
+                },
+                {
+                    "key": "response_time",
+                    "value": datetime.now().strftime("%H:%M:%S"),
                     "httponly": True,
                     "samesite": "lax",
                     "max_age": TOKEN_LIFE*8.5/100
