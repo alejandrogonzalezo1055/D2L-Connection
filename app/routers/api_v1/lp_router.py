@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Response, Depends, Cookie
 from typing import Annotated
 
-from app.services.lp_service import LPService, get_service
+from app.services.api_v1.lp_service import LPService, get_service
 from common.schemas import ResponseCookies, ProductVersionValidator
 
 

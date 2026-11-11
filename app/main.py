@@ -1,15 +1,9 @@
-from fastapi import APIRouter, FastAPI, Request, status
-from http.cookies import SimpleCookie
-from datetime import datetime
-import asyncio
+from fastapi import FastAPI
 
-from app.routers import health, oauth_router, lp_router
-from app.services.oauth_service import get_service
 from common.errors import register_error_handler
-from common.schemas import TOKEN_LIFE, create_response
-
-
-OAuthServ = get_service()
+from app.routers.base import health, oauth_router
+from app.routers.api_v1 import api_v1
+from app.middleware import Middleware
 
 
 def create_app() -> FastAPI:
@@ -19,29 +13,8 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(oauth_router.router)
 
-    api_v1 = APIRouter(prefix="/api/v1")
-    api_v1.include_router(lp_router.router)
-    app.include_router(api_v1)
+    app.include_router(api_v1.router)
 
-    @app.middleware("http")
-    async def middleware(request: Request, call_next):
-        resp_cookies = request.cookies
-
-        response = await call_next(request)
-
-        if "response_time" in resp_cookies.keys():
-            response_time = resp_cookies["response_time"]
-
-            initial_response_time = datetime.strptime(response_time, "%H:%M:%S")
-            time_diff = datetime.now() - initial_response_time
-
-            if TOKEN_LIFE - TOKEN_LIFE * 15 / 100 <= time_diff.seconds < TOKEN_LIFE:
-                response = await OAuthServ.auto_obtain_tokens("refresh", response=response, refresh_token=resp_cookies["refresh_token"])
-            elif time_diff.seconds > TOKEN_LIFE:
-                response = await OAuthServ.auto_obtain_tokens("access")
-        """elif not resp_cookies:
-            response = await OAuthServ.auto_obtain_tokens("access")"""
-
-        return response
+    app.add_middleware(Middleware)
 
     return app

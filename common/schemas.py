@@ -1,16 +1,14 @@
 from fastapi import Path, HTTPException, status
 from fastapi.responses import Response, RedirectResponse, JSONResponse
 from pydantic import BaseModel, field_validator
-from typing import Final, Annotated
+from typing import Annotated
 import httpx
 
 from common.settings import get_settings
 
 
-TOKEN_LIFE: Final[int] = 3600
-
-
 product_version = Annotated[float | None, Path()]
+
 
 class ProductVersionValidator():
     def __init__(self, product: str):

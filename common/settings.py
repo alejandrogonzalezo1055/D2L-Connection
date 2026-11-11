@@ -6,6 +6,10 @@ from functools import lru_cache
 
 FrozenSecret = Annotated[SecretStr, Field(default=None, frozen=True)]
 
+
+TOKEN_LIFE: Final[int] = 3600
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file='common/.env',

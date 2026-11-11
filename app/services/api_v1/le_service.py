@@ -31,7 +31,8 @@ class LEService():
         return response.json(), response.status_code
 
 
-    def
+    def a(self):
+        ...
 
 
 @lru_cache()

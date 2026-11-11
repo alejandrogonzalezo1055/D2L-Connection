@@ -8,13 +8,10 @@ from datetime import datetime
 import secrets
 import httpx
 
-from common.settings import get_settings
-from common.schemas import CallbackRequest, ResponseCookies, TOKEN_LIFE, add_cookies, create_redirect_response, create_response
+from common.settings import get_settings, TOKEN_LIFE
+from common.schemas import CallbackRequest, ResponseCookies, add_cookies, create_redirect_response, create_response
 from common.errors import get_logger
 
-
-Logger = get_logger().logger
-callback_url = "https://localhost:9000/auth/callback"
 
 callback_request = Annotated[CallbackRequest | None, Query()]
 cookies = Annotated[ResponseCookies | None, Cookie()]
@@ -25,12 +22,14 @@ token_rep = Annotated[tuple[dict,int,datetime] | tuple[None,None,None], "Paramet
 class OAuthService:
     def __init__(self):
         self.settings = get_settings()
+        self.logger = get_logger().logger
         self.token_options = {
             "access": "authorization_code",
             "refresh": "refresh_token"
         }
         self.d2l_client = httpx.Client()
         self.async_d2l_client = httpx.AsyncClient()
+        self.callback_url = "https://localhost:9000/auth/callback"
 
 
     def auth_url(self, redirect_uri: str) -> tuple[str, str]:
@@ -49,7 +48,7 @@ class OAuthService:
 
 
     def login_url(self) -> Response:
-        url, state = self.auth_url(callback_url)
+        url, state = self.auth_url(self.callback_url)
 
         response_data = {
             "url": url,
@@ -154,7 +153,7 @@ class OAuthService:
                         "refresh_token": refresh_token
                     }
                 )
-                Logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
+                self.logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
 
                 return response.json(), response.status_code, datetime.now()
             case "access":
@@ -164,10 +163,10 @@ class OAuthService:
                     data={
                         "grant_type": self.token_options["access"],
                         "code": auth_code,
-                        "redirect_uri": callback_url
+                        "redirect_uri": self.callback_url
                     }
                 )
-                Logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
+                self.logger.info("TokenReq-Access. Se envio una peticion post al cliente d2l.")
 
                 return response.json(), response.status_code, datetime.now()
 
@@ -185,7 +184,7 @@ class OAuthService:
                 "refresh_token": refresh_token
             }
         )
-        Logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
+        self.logger.info("TokenReq-Refresh. Se envio una peticion post al cliente d2l.")
 
         if "error" not in response.json().keys():
             return response.json(), response.status_code, datetime.now()
@@ -293,7 +292,7 @@ class OAuthService:
 
     async def auto_obtain_tokens(self, option: str, response: Response | None = None, refresh_token: cookie = None) -> Response:
         if not response and option != "access":
-            Logger.error(
+            self.logger.error(
                 f"Auto-ObtainTokens.\n"
                 f"HTTP code: {status.HTTP_404_NOT_FOUND}. La respuesta no existe o esta vacia."
             )
@@ -303,7 +302,7 @@ class OAuthService:
             )
 
         if not refresh_token and option != "access":
-            Logger.error(
+            self.logger.error(
                 f"Auto-ObtainTokens.\n"
                 f"HTTP code: {status.HTTP_404_NOT_FOUND}. No existe el refresh token o ya caduco."
             )
@@ -314,9 +313,9 @@ class OAuthService:
 
         match option:
             case "refresh":
-                Logger.info(f"Auto-ObtainTokens.\nSe va a obtener el refresh token.")
+                self.logger.info(f"Auto-ObtainTokens.\nSe va a obtener el refresh token.")
                 response = await self.auto_refresh_token(response, refresh_token)
-                Logger.info(f"Auto-ObtainTokens.\nSe obtuvo el refresh token.")
+                self.logger.info(f"Auto-ObtainTokens.\nSe obtuvo el refresh token.")
             case "access":
                 response_data = {
                     "status_code": status.HTTP_408_REQUEST_TIMEOUT,
@@ -357,9 +356,9 @@ class OAuthService:
             ]
 
             response = add_cookies(response, cookies_data)
-            Logger.info("Auto-Refresh. Se añadieron las tokens con los tokens generados automaticamente")
+            self.logger.info("Auto-Refresh. Se añadieron las tokens con los tokens generados automaticamente")
         else:
-            Logger.error(
+            self.logger.error(
                 f"status_code: {resp_status}\n"
                 f"token_type: auto-refresh\n"
                 f"error: {json_response["error"]}\n"
