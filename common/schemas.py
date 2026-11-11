@@ -75,6 +75,14 @@ def add_cookies(response: Response, cookies_data: list[dict]) -> Response:
     return response
 
 
+def delete_cookies(response: Response) -> Response:
+    for cookie in ["auth_code", "oauth_state", "access_token", "refresh_token", "response_time"]:
+        response.delete_cookie(key=cookie, secure=True)
+
+    return response
+
+
+
 def create_redirect_response(data: dict | None = None) -> Response:
     response = RedirectResponse(url=data["url"], status_code=data["status_code"])
 
@@ -96,4 +104,3 @@ def create_response(data: dict | None = None) -> Response:
         response = add_cookies(response, data["cookies"])
 
     return response
-

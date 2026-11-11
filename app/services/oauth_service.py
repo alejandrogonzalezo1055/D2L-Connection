@@ -9,7 +9,7 @@ import secrets
 import httpx
 
 from common.settings import get_settings, TOKEN_LIFE
-from common.schemas import CallbackRequest, ResponseCookies, add_cookies, create_redirect_response, create_response
+from common.schemas import CallbackRequest, ResponseCookies, add_cookies, delete_cookies, create_redirect_response, create_response
 from common.errors import get_logger
 
 
@@ -83,21 +83,7 @@ class OAuthService:
             "cookies": None
         }
 
-        return create_redirect_response(response_data)
-
-
-    def auto_logout(self) -> bool:
-        url = self.settings.get_api_url(2) + "/logout"
-
-        response = self.d2l_client.get(
-            url=url,
-            follow_redirects=False
-        )
-
-        if response.is_error:
-            return False
-        else:
-            return True
+        return delete_cookies(create_redirect_response(response_data))
 
 
     def auth_callback(self, request: callback_request, req_cookies: cookies) -> Response:
