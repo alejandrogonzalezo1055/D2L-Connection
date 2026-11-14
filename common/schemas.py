@@ -53,6 +53,7 @@ class ProductVersionValidator():
 class CallbackRequest(BaseModel):
     code: str | None = None
     state: str | None = None
+    error: str | None = None
 
     @field_validator("state")
     @classmethod
@@ -89,7 +90,6 @@ def delete_cookies(response: Response) -> Response:
         response.delete_cookie(key=cookie, secure=True)
 
     return response
-
 
 
 def create_redirect_response(data: dict | None = None) -> Response:

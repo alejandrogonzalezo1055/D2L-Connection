@@ -31,5 +31,8 @@ def callback(service: OAuthServ, request: callback_request = None, req_cookies: 
     return service.auth_callback(request, req_cookies)
 
 @router.post("/obtain-token", status_code=status.HTTP_200_OK)
-def obtain_token(service: OAuthServ, req_cookies: cookies = None, option: Annotated[str, Body()] = "access") -> Response:
+def obtain_token(service: OAuthServ, req_cookies: cookies = None, option: Annotated[dict | None, Body()] = None) -> Response:
+    if option is None:
+        option = {"token": "refresh", "manual": True}
+
     return service.obtain_tokens(req_cookies, option)

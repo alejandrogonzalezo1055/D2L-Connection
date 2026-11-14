@@ -45,9 +45,9 @@ class Middleware(BaseHTTPMiddleware):
             lim_inf = self.token_life - self.token_life*15/100
 
             if lim_inf <= time_diff.total_seconds() < self.token_life and "refresh_token" in req_cookies.keys():
-                response = await self.oauth_service.auto_obtain_tokens("refresh", response=response, refresh_token=req_cookies["refresh_token"])
+                response = await self.oauth_service.auto_obtain_tokens({"token":"refresh"}, response=response, refresh_token=req_cookies["refresh_token"])
             elif time_diff.seconds > self.token_life:
-                response = await self.oauth_service.auto_obtain_tokens("access")
+                response = await self.oauth_service.auto_obtain_tokens({"token":"access"})
 
         return response
 
